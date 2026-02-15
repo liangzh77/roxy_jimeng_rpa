@@ -1,0 +1,10 @@
+{
+  "port": 3080,
+  "roxy": {
+    "api": "http://127.0.0.1:50000",
+    "workspaceId": 67641
+  },
+  "sessions": [
+    { "dirId": "3879efa7e5c7a9fdbe66a2c5c7d2a241", "name": "账号1" }
+  ]
+}

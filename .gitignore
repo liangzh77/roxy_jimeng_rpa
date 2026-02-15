@@ -1,5 +1,8 @@
 node_modules/
 screenshots/
 videos/
+uploads/
 *.png
 result.json
+diag_*.js
+test_task*.json
