@@ -22,8 +22,8 @@ const CONFIG = {
         url: 'https://jimeng.jianying.com/ai-tool/generate?type=video',
     },
     images: [
-        String.raw`C:\Users\Administrator\AppData\Roaming\ai-video-maker\storage\好未来测试4\files\2_图片_源角色图片\微信图片_2026-02-14_122141_658 - 副本.png`,
-        String.raw`C:\Users\Administrator\AppData\Roaming\ai-video-maker\storage\好未来测试4\files\2_图片_源角色图片\微信图片_2026-02-14_122141_658.png`,
+        path.join(__dirname, 'backup', '003.png'),
+        path.join(__dirname, 'backup', '004.png'),
     ],
     // 提示词片段：文本和 @ 引用交替
     promptParts: [
@@ -34,7 +34,7 @@ const CONFIG = {
         { type: 'at', label: '图片1' },
         { type: 'text', value: ' 中女士正在用兴奋的口吻对着镜头聊天，画面逐渐拉近至面部特写，展现出丰富的面部表情和自然的嘴部动作。' },
     ],
-    screenshots: 'D:/aicode/yuncheng/screenshots',
+    screenshots: path.join(__dirname, 'backup', 'screenshots'),
 };
 
 function log(step, msg) {
