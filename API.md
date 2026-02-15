@@ -47,8 +47,6 @@ GET /api/file/check/:md5
 {
   "exists": true,
   "md5": "8a2d577559e6d10cfda51990461025e1",
-  "filename": "8a2d577559e6d10cfda51990461025e1.png",
-  "path": "C:\\...\\uploads\\8a2d577559e6d10cfda51990461025e1.png",
   "size": 240379
 }
 ```
@@ -90,8 +88,6 @@ curl -F "file=@photo.png" http://localhost:3080/api/file/upload
 ```json
 {
   "md5": "8a2d577559e6d10cfda51990461025e1",
-  "filename": "8a2d577559e6d10cfda51990461025e1.png",
-  "path": "C:\\...\\uploads\\8a2d577559e6d10cfda51990461025e1.png",
   "size": 240379
 }
 ```
