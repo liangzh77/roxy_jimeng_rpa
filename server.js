@@ -49,7 +49,7 @@ app.post('/api/file/upload', upload.single('file'), (req, res) => {
 
 // 提交任务
 app.post('/api/task/submit', (req, res) => {
-    const { images, promptParts, model, refMode, ratio, duration } = req.body;
+    const { images, videos, audios, promptParts, model, refMode, ratio, duration } = req.body;
 
     // 校验必填参数
     if (!images || !Array.isArray(images) || images.length === 0) {
@@ -59,22 +59,36 @@ app.post('/api/task/submit', (req, res) => {
         return res.status(400).json({ error: 'promptParts 必须是非空数组' });
     }
 
-    // 校验所有 MD5 文件是否存在
-    const imagePaths = [];
-    for (const md5 of images) {
-        const filePath = fileStore.getFilePath(md5);
-        if (!filePath) {
-            return res.status(400).json({ error: `文件不存在: ${md5}` });
+    // 校验所有 MD5 文件是否存在，解析为本地路径
+    const resolveMd5List = (md5List, label) => {
+        const paths = [];
+        for (const md5 of md5List) {
+            const filePath = fileStore.getFilePath(md5);
+            if (!filePath) {
+                return { error: `${label}文件不存在: ${md5}` };
+            }
+            paths.push(filePath);
         }
-        imagePaths.push(filePath);
-    }
+        return { paths };
+    };
+
+    const imageResult = resolveMd5List(images, '图片');
+    if (imageResult.error) return res.status(400).json({ error: imageResult.error });
+
+    const videoResult = resolveMd5List(videos || [], '视频');
+    if (videoResult.error) return res.status(400).json({ error: videoResult.error });
+
+    const audioResult = resolveMd5List(audios || [], '音频');
+    if (audioResult.error) return res.status(400).json({ error: audioResult.error });
 
     // 生成 taskId
     const taskId = crypto.randomUUID();
     const taskInfo = {
         taskId,
         status: 'waiting',
-        images: imagePaths,
+        images: imageResult.paths,
+        videos: videoResult.paths,
+        audios: audioResult.paths,
         promptParts,
         model: model || 'seedance_2.0',
         refMode: refMode || '全能参考',
@@ -152,6 +166,8 @@ async function processQueue() {
         try {
             const result = await submitTask(session.page, {
                 images: task.images,
+                videos: task.videos,
+                audios: task.audios,
                 promptParts: task.promptParts,
                 model: task.model,
                 refMode: task.refMode,

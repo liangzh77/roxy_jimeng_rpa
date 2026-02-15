@@ -110,6 +110,8 @@ Content-Type: application/json
 ```json
 {
   "images": ["md5_1", "md5_2"],
+  "videos": ["md5_3"],
+  "audios": ["md5_4"],
   "promptParts": [
     { "type": "at", "label": "图片1" },
     { "type": "text", "value": " 作为起始帧，" },
@@ -117,7 +119,7 @@ Content-Type: application/json
     { "type": "text", "value": " 作为结束帧，女生做各种好看的pose" }
   ],
   "model": "seedance_2.0",
-  "refMode": "首尾帧",
+  "refMode": "全能参考",
   "ratio": "9:16",
   "duration": "8s"
 }
@@ -128,11 +130,15 @@ Content-Type: application/json
 | 字段 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `images` | 是 | — | 图片文件 MD5 数组（需先通过上传接口上传） |
+| `videos` | 否 | `[]` | 视频文件 MD5 数组 |
+| `audios` | 否 | `[]` | 音频文件 MD5 数组 |
 | `promptParts` | 是 | — | 提示词片段数组，见下方说明 |
 | `model` | 否 | `seedance_2.0` | 模型版本 |
 | `refMode` | 否 | `全能参考` | 参考模式 |
 | `ratio` | 否 | `9:16` | 画幅比例 |
 | `duration` | 否 | `8s` | 视频时长 |
+
+> **注意**：`videos` 和 `audios` 仅在支持多类型文件的参考模式（如「全能参考」）下有效。在「首尾帧」等模式下，仅支持图片上传。
 
 **promptParts 类型**
 
@@ -171,7 +177,7 @@ curl -X POST http://localhost:3080/api/task/submit \
     "promptParts": [
       {"type": "text", "value": "女生从画面左侧走向右侧，自然摆动手臂"}
     ],
-    "refMode": "首尾帧",
+    "refMode": "全能参考",
     "ratio": "9:16",
     "duration": "8s"
   }'
@@ -225,7 +231,7 @@ waiting → submitting → submitted
 }
 ```
 
-调用方拿到 `sessionId` 和 `historyId` 后，可自行通过即梦 API 轮询视频生成进度并下载结果。
+调用方拿到 `sessionId` 和 `historyId` 后，需自行调用即梦 API 完成后续的轮询和下载，见文末 [后续步骤：轮询与下载](#后续步骤轮询与下载)。
 
 **响应 — failed**
 
@@ -287,14 +293,14 @@ GET /api/sessions
 
 ```
 1. 上传文件
-   POST /api/file/upload  ×N 张图片
+   POST /api/file/upload  ×N 个文件（图片/视频/音频）
         ↓ 返回各文件的 md5
 
 2. （可选）确认文件已存在
    GET /api/file/check/:md5
 
 3. 提交任务
-   POST /api/task/submit  { images: [md5_1, md5_2], promptParts: [...] }
+   POST /api/task/submit  { images: [...], videos: [...], audios: [...], promptParts: [...] }
         ↓ 返回 taskId
 
 4. 轮询任务状态
@@ -332,3 +338,93 @@ GET /api/sessions
 | `sessions` | 浏览器会话列表，每项包含 `dirId` 和 `name` |
 
 添加多个 session 可实现并行处理任务，每个 session 同一时刻只处理一个任务。
+
+---
+
+## 后续步骤：轮询与下载
+
+任务提交成功（`status: "submitted"`）后，返回的 `sessionId` 和 `historyId` **不能直接获取视频文件**，还需要调用即梦平台 API 完成轮询和下载。这部分不经过本服务，由调用方自行实现。
+
+### 认证方式
+
+所有即梦 API 请求需要以下 Header：
+
+| Header | 值 |
+|--------|------|
+| `Cookie` | `sessionid=<sessionId>` |
+| `sign` | `md5("9e2c\|<URI后7位>\|7\|8.4.0\|<unix时间戳>\|\|11ac")` |
+
+**sign 计算示例（URI = `/mweb/v1/get_history_by_ids`）：**
+
+```
+URI 后 7 位 = "by_ids"（取路径最后 7 个字符）
+timestamp = 当前 Unix 时间戳（秒）
+sign = md5("9e2c|ory_by_ids|7|8.4.0|1739592000||11ac")
+```
+
+### 1. 轮询生成进度
+
+```
+POST https://jimeng.jianying.com/mweb/v1/get_history_by_ids
+Content-Type: application/json
+
+{
+  "history_ids": ["<historyId>"]
+}
+```
+
+**响应结构**（`data` 是以 `historyId` 为 key 的对象，不是数组）：
+
+```json
+{
+  "data": {
+    "11880837749004": {
+      "status": 20,
+      "item_list": []
+    }
+  }
+}
+```
+
+取状态值：`data[historyId].status`
+
+**status 状态码**
+
+| status | 含义 | 操作 |
+|--------|------|------|
+| 20 | 生成中 (PROCESSING) | 继续轮询 |
+| 42 | 后处理中 | 继续轮询 |
+| 45 | 收尾中 | 继续轮询 |
+| 10 | 成功 (SUCCESS) | 提取视频 URL |
+| 50 | 完成 (COMPLETED) | 提取视频 URL |
+| 30 | 失败 (FAILED) | 停止轮询 |
+
+建议轮询间隔 3-5 秒，首次可等待 5 秒后开始。
+
+### 2. 下载视频
+
+生成完成（status 为 10 或 50）后，从 `data[historyId].item_list[0].video` 中提取视频 URL，优先级：
+
+```
+video.transcoded_video.origin.video_url
+→ video.play_url
+→ video.download_url
+→ video.url
+```
+
+如果以上都没有但有 `item_id`，可通过 `get_local_item_list` 接口获取高清视频 URL：
+
+```
+POST https://jimeng.jianying.com/mweb/v1/get_local_item_list
+Content-Type: application/json
+
+{
+  "item_id_list": ["<item_id>"],
+  "pack_item_opt": {"scene": 1, "need_data_integrity": true},
+  "is_for_video_download": true
+}
+```
+
+### 参考实现
+
+完整的轮询 + 下载逻辑可参考项目中 `jimeng_auto.js` 的步骤 9-10。
