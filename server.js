@@ -184,9 +184,48 @@ async function processQueue() {
             task.sessionId = sessionId;
             console.log(`[worker] 任务 ${taskId} 提交成功: historyId=${result.historyId}`);
         } catch (err) {
-            task.status = 'failed';
-            task.error = err.message;
-            console.error(`[worker] 任务 ${taskId} 失败: ${err.message}`);
+            // 判断是否是浏览器连接断开的错误
+            const isConnectionError = err.message.includes('has been closed')
+                || err.message.includes('Target closed')
+                || err.message.includes('Browser has been disconnected')
+                || err.message.includes('Connection closed');
+
+            if (isConnectionError) {
+                console.warn(`[worker] session ${session.name} 连接断开，尝试重连...`);
+                try {
+                    await pool.reconnect(session.dirId);
+                    // 重连成功，获取新的 session 引用
+                    const newSession = pool.sessions.get(session.dirId);
+                    console.log(`[worker] 重连成功，重试任务 ${taskId}`);
+
+                    const result = await submitTask(newSession.page, {
+                        images: task.images,
+                        videos: task.videos,
+                        audios: task.audios,
+                        promptParts: task.promptParts,
+                        model: task.model,
+                        refMode: task.refMode,
+                        ratio: task.ratio,
+                        duration: task.duration,
+                    });
+
+                    const cookies = await newSession.context.cookies('https://jimeng.jianying.com');
+                    const sessionId = cookies.find(c => c.name === 'sessionid')?.value || newSession.sessionId;
+
+                    task.status = 'submitted';
+                    task.historyId = result.historyId;
+                    task.sessionId = sessionId;
+                    console.log(`[worker] 任务 ${taskId} 重试成功: historyId=${result.historyId}`);
+                } catch (retryErr) {
+                    task.status = 'failed';
+                    task.error = `浏览器连接断开且重连失败: ${retryErr.message}`;
+                    console.error(`[worker] 任务 ${taskId} 重连后仍失败: ${retryErr.message}`);
+                }
+            } else {
+                task.status = 'failed';
+                task.error = err.message;
+                console.error(`[worker] 任务 ${taskId} 失败: ${err.message}`);
+            }
         } finally {
             pool.release(session.dirId);
         }
